@@ -3,8 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
+import { Panel, Group, Separator } from "react-resizable-panels";
 import { MonacoEditor } from "@/components/editor/MonacoEditor";
+import { AIChatPanel } from "@/components/candidate/AIChatPanel";
+import { RunPanel } from "@/components/candidate/RunPanel";
+import { isRunnableLanguage } from "@/lib/judge0";
 import type { InterviewSession, InterviewSet, Question } from "@/types/db";
+
+function VerticalResizeHandle() {
+  return <Separator className="relative w-1.5 shrink-0 cursor-col-resize bg-gray-800 transition-colors hover:bg-violet-600 active:bg-violet-600" />;
+}
+
+function HorizontalResizeHandle() {
+  return <Separator className="relative h-1.5 shrink-0 cursor-row-resize bg-gray-800 transition-colors hover:bg-violet-600 active:bg-violet-600" />;
+}
 
 export function AnswerWorkspace({
   token,
@@ -30,7 +42,7 @@ export function AnswerWorkspace({
   const [submitting, setSubmitting] = useState(false);
   const dirtyRef = useRef(false);
 
-  const activeQuestion = questions[activeIndex];
+  const activeQuestion: Question | undefined = questions[activeIndex];
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -59,6 +71,7 @@ export function AnswerWorkspace({
   }
 
   function handleCodeChange(value: string) {
+    if (!activeQuestion) return;
     setAnswers((prev) => ({ ...prev, [activeQuestion.id]: value }));
     dirtyRef.current = true;
   }
@@ -76,6 +89,17 @@ export function AnswerWorkspace({
     if (res.ok) {
       router.push(`/interview/${token}/done`);
     }
+  }
+
+  if (questions.length === 0) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+        <div className="max-w-md text-center">
+          <h1 className="text-lg font-semibold text-gray-900">此面試尚未設定題目</h1>
+          <p className="mt-2 text-sm text-gray-500">請聯繫招募窗口確認面試連結是否正確。</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -101,55 +125,81 @@ export function AnswerWorkspace({
         </div>
       </div>
 
-      <div className="grid flex-1 grid-cols-5 overflow-hidden">
-        <div className="col-span-3 flex flex-col overflow-hidden border-r border-gray-800">
-          <div className="flex gap-1 bg-gray-950 px-2 pt-2">
-            {questions.map((q, i) => (
-              <button
-                key={q.id}
-                onClick={() => setActiveIndex(i)}
-                className={`rounded-t-lg px-3 py-2 text-xs font-medium ${
-                  i === activeIndex ? "bg-gray-900 text-white" : "text-gray-400 hover:text-gray-200"
-                }`}
-              >
-                第{i + 1}題
-              </button>
-            ))}
-          </div>
-          <div className="flex-1">
-            {activeQuestion && (
-              <MonacoEditor
-                language={activeQuestion.language}
-                value={answers[activeQuestion.id] ?? ""}
-                onChange={handleCodeChange}
-              />
-            )}
-          </div>
-        </div>
-
-        <div className="col-span-2 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto bg-white p-4">
-            {activeQuestion && (
-              <>
-                <h2 className="text-sm font-semibold text-gray-900">{activeQuestion.title}</h2>
-                <div className="prose prose-sm mt-2 max-w-none text-gray-700">
-                  <ReactMarkdown>{activeQuestion.description}</ReactMarkdown>
-                </div>
-              </>
-            )}
-          </div>
-          <div className="flex h-56 flex-col border-t border-gray-200 bg-gray-50 p-3">
-            <div className="mb-2 text-xs font-medium text-gray-500">AI 助手</div>
-            <div className="flex-1 overflow-y-auto rounded-lg bg-white p-2 text-sm text-gray-400">
-              AI 助手將於下個階段開放，目前請專注於程式作答。
+      <div className="flex-1 overflow-hidden">
+        <Group orientation="horizontal">
+          <Panel defaultSize={60} minSize={30} className="flex flex-col overflow-hidden">
+            <div className="flex gap-1 border-r border-gray-800 bg-gray-950 px-2 pt-2">
+              {questions.map((q, i) => (
+                <button
+                  key={q.id}
+                  onClick={() => setActiveIndex(i)}
+                  className={`rounded-t-lg px-3 py-2 text-xs font-medium ${
+                    i === activeIndex ? "bg-gray-900 text-white" : "text-gray-400 hover:text-gray-200"
+                  }`}
+                >
+                  第{i + 1}題
+                </button>
+              ))}
             </div>
-            <input
-              disabled
-              placeholder="AI 助手尚未啟用"
-              className="mt-2 w-full rounded-lg border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-400"
-            />
-          </div>
-        </div>
+            <div className="flex-1 overflow-hidden border-r border-gray-800">
+              <Group orientation="vertical">
+                <Panel defaultSize={65} minSize={20}>
+                  {activeQuestion && (
+                    <MonacoEditor
+                      language={activeQuestion.language}
+                      value={answers[activeQuestion.id] ?? ""}
+                      onChange={handleCodeChange}
+                    />
+                  )}
+                </Panel>
+                <HorizontalResizeHandle />
+                <Panel defaultSize={35} minSize={15}>
+                  {activeQuestion && (
+                    <RunPanel
+                      key={activeQuestion.id}
+                      token={token}
+                      sessionId={session.id}
+                      questionId={activeQuestion.id}
+                      code={answers[activeQuestion.id] ?? ""}
+                      hasTestCases={!!activeQuestion.test_cases && activeQuestion.test_cases.length > 0}
+                      runnable={isRunnableLanguage(activeQuestion.language)}
+                    />
+                  )}
+                </Panel>
+              </Group>
+            </div>
+          </Panel>
+
+          <VerticalResizeHandle />
+
+          <Panel defaultSize={40} minSize={25} className="flex flex-col overflow-hidden">
+            <Group orientation="vertical">
+              <Panel defaultSize={55} minSize={20}>
+                <div className="h-full overflow-y-auto bg-white p-4">
+                  {activeQuestion && (
+                    <>
+                      <h2 className="text-sm font-semibold text-gray-900">{activeQuestion.title}</h2>
+                      <div className="prose prose-sm mt-2 max-w-none text-gray-700">
+                        <ReactMarkdown>{activeQuestion.description}</ReactMarkdown>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </Panel>
+              <HorizontalResizeHandle />
+              <Panel defaultSize={45} minSize={20}>
+                {activeQuestion && (
+                  <AIChatPanel
+                    token={token}
+                    sessionId={session.id}
+                    questionId={activeQuestion.id}
+                    currentCode={answers[activeQuestion.id] ?? ""}
+                  />
+                )}
+              </Panel>
+            </Group>
+          </Panel>
+        </Group>
       </div>
     </div>
   );

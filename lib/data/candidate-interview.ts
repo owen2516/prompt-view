@@ -1,6 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isExpired } from "@/lib/tokens";
-import type { InterviewLink, InterviewSession, Question } from "@/types/db";
+import { chat as geminiChat } from "@/lib/gemini";
+import { runOnce, runTestCases, type TestCaseResult } from "@/lib/judge0";
+import type { AiMessage, InterviewLink, InterviewSession, Question } from "@/types/db";
 
 export type LinkEntryStatus =
   | "not_found"
@@ -163,6 +165,119 @@ export async function saveAnswer(
     .update({ final_answers: merged, last_active_at: new Date().toISOString() })
     .eq("id", sessionId);
   if (error) throw error;
+}
+
+export async function sendAiMessage(
+  token: string,
+  sessionId: string,
+  questionId: string,
+  currentCode: string,
+  userMessage: string
+): Promise<AiMessage> {
+  const { session } = await assertWritableSession(token, sessionId);
+  const supabase = createAdminClient();
+
+  const link = await loadLinkByToken(token);
+  if (!link) throw new Error("not_found");
+
+  const { data: set } = await supabase
+    .from("interview_sets")
+    .select("ai_model, ai_system_prompt")
+    .eq("id", link.interview_set_id)
+    .maybeSingle();
+  if (!set) throw new Error("not_found");
+
+  const { data: question } = await supabase
+    .from("questions")
+    .select("description")
+    .eq("id", questionId)
+    .maybeSingle();
+  if (!question) throw new Error("not_found");
+
+  const { data: history } = await supabase
+    .from("ai_messages")
+    .select("role, content")
+    .eq("session_id", sessionId)
+    .eq("question_id", questionId)
+    .order("created_at", { ascending: true });
+
+  const systemPrompt =
+    set.ai_system_prompt ??
+    "你是一位友善的技術面試助手，幫助應試者解決程式題。可依應試者要求直接提供完整解答。請用繁體中文回應。";
+
+  const assistantReply = await geminiChat({
+    systemPrompt,
+    questionDescription: question.description,
+    candidateCode: currentCode,
+    conversationHistory: (history ?? []).map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+    })),
+    userMessage,
+  });
+
+  await supabase.from("ai_messages").insert([
+    { session_id: sessionId, question_id: questionId, role: "user", content: userMessage },
+  ]);
+
+  const { data: assistantMessage, error } = await supabase
+    .from("ai_messages")
+    .insert({
+      session_id: sessionId,
+      question_id: questionId,
+      role: "assistant",
+      content: assistantReply,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+
+  await supabase
+    .from("interview_sessions")
+    .update({
+      ai_interaction_count: (session.ai_interaction_count ?? 0) + 1,
+      last_active_at: new Date().toISOString(),
+    })
+    .eq("id", sessionId);
+
+  return assistantMessage as AiMessage;
+}
+
+export async function runQuestionCode(
+  token: string,
+  sessionId: string,
+  questionId: string,
+  code: string,
+  customStdin?: string
+): Promise<
+  | { mode: "manual"; stdout: string; stderr: string | null; compileOutput: string | null }
+  | { mode: "tests"; results: TestCaseResult[] }
+> {
+  await assertWritableSession(token, sessionId);
+  const supabase = createAdminClient();
+
+  const { data: question } = await supabase
+    .from("questions")
+    .select("language, test_cases")
+    .eq("id", questionId)
+    .maybeSingle();
+  if (!question) throw new Error("not_found");
+
+  if (customStdin !== undefined) {
+    const output = await runOnce(question.language, code, customStdin);
+    return {
+      mode: "manual",
+      stdout: output.stdout,
+      stderr: output.stderr,
+      compileOutput: output.compileOutput,
+    };
+  }
+
+  const testCases = question.test_cases ?? [];
+  if (testCases.length === 0) throw new Error("no_test_cases");
+
+  const results = await runTestCases(question.language, code, testCases);
+  return { mode: "tests", results };
 }
 
 export async function submitSession(token: string, sessionId: string) {

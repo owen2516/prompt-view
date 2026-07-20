@@ -3,6 +3,12 @@ import { z } from "zod";
 import { getAuthenticatedAdminId } from "@/lib/auth";
 import { addQuestion, reorderQuestions } from "@/lib/data/interviews";
 
+const testCaseSchema = z.object({
+  input: z.string(),
+  expected_output: z.string(),
+  label: z.string().optional(),
+});
+
 const createSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1),
@@ -11,6 +17,7 @@ const createSchema = z.object({
   time_limit_minutes: z.number().int().positive().nullable().optional(),
   starter_code: z.string().nullable().optional(),
   is_ai_generated: z.boolean().optional(),
+  test_cases: z.array(testCaseSchema).nullable().optional(),
 });
 
 export async function POST(

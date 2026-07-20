@@ -1,8 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_MODEL = "gemini-flash-latest";
 const DEFAULT_PROMPT =
-  "你是一位資深工程師，協助評估應試者的技術能力。請用繁體中文回應，並根據應試者的作答給予適當的提示或追問。";
+  "你是一位友善的技術面試助手，幫助應試者解決程式題。你的角色是：\n1. 幫助應試者理解題目\n2. 提供有建設性的提示\n3. 根據應試者要求，可以直接提供完整解答\n4. 討論不同的解題方法\n5. 鼓勵應試者思考和學習\n\n請用繁體中文回應。";
 
 export async function getAiSettings(adminId: string) {
   const supabase = createAdminClient();

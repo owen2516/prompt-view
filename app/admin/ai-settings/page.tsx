@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 export default function AiSettingsPage() {
-  const [model, setModel] = useState("claude-sonnet-4-6");
+  const [model, setModel] = useState("gemini-flash-latest");
   const [prompt, setPrompt] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -47,7 +47,7 @@ export default function AiSettingsPage() {
             value={model}
             className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-600"
           >
-            <option value="claude-sonnet-4-6">Claude Sonnet（MVP 階段固定，Phase 5 開放多模型）</option>
+            <option value="gemini-flash-latest">Gemini Flash（免費額度，MVP 階段固定，Phase 5 開放多模型）</option>
           </select>
         </div>
         <div className="mb-4">

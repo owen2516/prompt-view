@@ -19,6 +19,12 @@ export interface AiSettings {
   updated_at: string;
 }
 
+export interface TestCase {
+  input: string;
+  expected_output: string;
+  label?: string;
+}
+
 export interface Question {
   id: string;
   admin_id: string;
@@ -28,7 +34,7 @@ export interface Question {
   difficulty: Difficulty;
   time_limit_minutes: number | null;
   starter_code: string | null;
-  test_cases: unknown;
+  test_cases: TestCase[] | null;
   is_ai_generated: boolean;
   created_at: string;
 }

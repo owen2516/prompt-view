@@ -3,6 +3,12 @@ import { z } from "zod";
 import { getAuthenticatedAdminId } from "@/lib/auth";
 import { updateQuestion, deleteQuestion } from "@/lib/data/interviews";
 
+const testCaseSchema = z.object({
+  input: z.string(),
+  expected_output: z.string(),
+  label: z.string().optional(),
+});
+
 const updateSchema = z.object({
   title: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
@@ -10,6 +16,7 @@ const updateSchema = z.object({
   difficulty: z.enum(["easy", "medium", "hard"]).optional(),
   time_limit_minutes: z.number().int().positive().nullable().optional(),
   starter_code: z.string().nullable().optional(),
+  test_cases: z.array(testCaseSchema).nullable().optional(),
 });
 
 export async function PATCH(

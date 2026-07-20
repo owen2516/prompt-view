@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateLinkToken, expiryDateFromDays } from "@/lib/tokens";
-import type { InterviewSet, InterviewLink, Question, Difficulty } from "@/types/db";
+import type { InterviewSet, InterviewLink, Question, Difficulty, TestCase } from "@/types/db";
 
 export interface InterviewSetCard extends InterviewSet {
   question_count: number;
@@ -169,6 +169,7 @@ export async function addQuestion(
     time_limit_minutes?: number | null;
     starter_code?: string | null;
     is_ai_generated?: boolean;
+    test_cases?: TestCase[] | null;
   }
 ) {
   const set = await getOwnedSet(adminId, setId);
@@ -186,6 +187,7 @@ export async function addQuestion(
       time_limit_minutes: input.time_limit_minutes ?? null,
       starter_code: input.starter_code ?? null,
       is_ai_generated: input.is_ai_generated ?? false,
+      test_cases: input.test_cases ?? null,
     })
     .select("*")
     .single();
@@ -214,6 +216,7 @@ export async function updateQuestion(
       | "difficulty"
       | "time_limit_minutes"
       | "starter_code"
+      | "test_cases"
     >
   >
 ) {

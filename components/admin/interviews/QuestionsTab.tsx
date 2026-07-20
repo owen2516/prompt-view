@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { DifficultyBadge, AiGeneratedBadge } from "@/components/admin/badges";
 import { QuestionFormDialog } from "@/components/admin/interviews/QuestionFormDialog";
-import type { Difficulty, Question } from "@/types/db";
+import { AiGenerateDialog } from "@/components/admin/interviews/AiGenerateDialog";
+import type { Difficulty, Question, TestCase } from "@/types/db";
 
 export function QuestionsTab({
   setId,
@@ -15,6 +16,7 @@ export function QuestionsTab({
   onChanged: () => void;
 }) {
   const [dialogMode, setDialogMode] = useState<"none" | "add" | Question>("none");
+  const [showAiGenerate, setShowAiGenerate] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const totalMinutes = questions.reduce((sum, q) => sum + (q.time_limit_minutes ?? 0), 0);
@@ -27,6 +29,8 @@ export function QuestionsTab({
     difficulty: Difficulty;
     time_limit_minutes: number | null;
     starter_code: string | null;
+    is_ai_generated?: boolean;
+    test_cases?: TestCase[] | null;
   }) {
     const res = await fetch(`/api/admin/interviews/${setId}/questions`, {
       method: "POST",
@@ -47,6 +51,7 @@ export function QuestionsTab({
       difficulty: Difficulty;
       time_limit_minutes: number | null;
       starter_code: string | null;
+      test_cases?: TestCase[] | null;
     }
   ) {
     const res = await fetch(`/api/admin/interviews/${setId}/questions/${questionId}`, {
@@ -164,13 +169,39 @@ export function QuestionsTab({
             ))}
           </tbody>
         </table>
-        <button
-          onClick={() => setDialogMode("add")}
-          className="flex w-full items-center justify-center gap-1 border-t border-gray-100 py-3 text-sm text-gray-500 hover:bg-gray-50"
-        >
-          + 新增題目
-        </button>
+        <div className="border-t border-gray-100 flex">
+          <button
+            onClick={() => setDialogMode("add")}
+            className="flex flex-1 items-center justify-center gap-1 py-3 text-sm text-gray-500 hover:bg-gray-50"
+          >
+            + 新增題目
+          </button>
+          <button
+            onClick={() => setShowAiGenerate(true)}
+            className="flex flex-1 items-center justify-center gap-1 border-l border-gray-100 py-3 text-sm text-violet-600 hover:bg-violet-50"
+          >
+            ✨ AI 產題
+          </button>
+        </div>
       </div>
+
+      {showAiGenerate && (
+        <AiGenerateDialog
+          setId={setId}
+          onClose={() => setShowAiGenerate(false)}
+          onGenerated={async (generated) => {
+            await handleAdd({
+              title: generated.title,
+              description: generated.description,
+              starter_code: generated.starter_code,
+              difficulty: generated.difficulty,
+              language: generated.language,
+              time_limit_minutes: null,
+              is_ai_generated: true,
+            });
+          }}
+        />
+      )}
 
       {dialogMode !== "none" && (
         <QuestionFormDialog
