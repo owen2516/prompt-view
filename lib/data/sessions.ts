@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { computeAndSaveScore } from "@/lib/data/candidate-interview";
 import type { InterviewSession, ReviewStatus } from "@/types/db";
 
 async function getOwnedSetIdsAndLinks(adminId: string) {
@@ -172,6 +173,12 @@ export async function getSessionDetail(adminId: string, sessionId: string) {
     recordings: recordingsWithUrls,
     aiMessages: aiMessages ?? [],
   };
+}
+
+export async function rescoreSession(adminId: string, sessionId: string) {
+  const detail = await getSessionDetail(adminId, sessionId);
+  if (!detail) throw new Error("not_found");
+  return computeAndSaveScore(sessionId);
 }
 
 export async function setReviewStatus(

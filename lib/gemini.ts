@@ -95,11 +95,14 @@ export async function chat(input: {
   return result.response.text();
 }
 
-export async function scoreInterview(input: {
-  questionDescription: string;
-  candidateCode: string;
-  conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
-}): Promise<{
+export async function scoreFullInterview(
+  questions: Array<{
+    title: string;
+    description: string;
+    candidateCode: string;
+    conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
+  }>
+): Promise<{
   score: number;
   summary: string;
 }> {
@@ -108,28 +111,34 @@ export async function scoreInterview(input: {
     generationConfig: { responseMimeType: "application/json" },
   });
 
-  const conversationText = input.conversationHistory
-    .map((msg) => `${msg.role === "user" ? "Candidate" : "AI"}: ${msg.content}`)
-    .join("\n\n");
-
-  const prompt = `You are an technical interview evaluator. Analyze the following coding interview:
-
-Question:
-${input.questionDescription}
+  const questionsText = questions
+    .map((q, i) => {
+      const conversationText = q.conversationHistory
+        .map((msg) => `${msg.role === "user" ? "Candidate" : "AI"}: ${msg.content}`)
+        .join("\n");
+      return `--- Question ${i + 1}: ${q.title} ---
+Description:
+${q.description}
 
 Candidate's Final Code:
 \`\`\`
-${input.candidateCode}
+${q.candidateCode}
 \`\`\`
 
-Conversation History:
-${conversationText || "(no AI conversation)"}
+Conversation with AI Assistant:
+${conversationText || "(no AI conversation)"}`;
+    })
+    .join("\n\n");
+
+  const prompt = `You are a technical interview evaluator. Analyze the following coding interview, which may contain multiple questions:
+
+${questionsText}
 
 Provide a JSON response with:
-- score: A number from 0 to 100 representing the overall performance
-- summary: A brief summary (2-3 sentences) of strengths and areas for improvement
+- score: A single overall number from 0 to 100 representing the candidate's performance across all questions
+- summary: A brief summary (2-4 sentences) of strengths and areas for improvement, referencing specific questions where relevant
 
-Consider:
+Consider across all questions:
 1. Code correctness and completeness
 2. Code quality and style
 3. Problem-solving approach

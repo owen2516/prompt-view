@@ -23,6 +23,8 @@ export default function SessionDetailPage() {
   const router = useRouter();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
+  const [rescoring, setRescoring] = useState(false);
+  const [rescoreError, setRescoreError] = useState<string | null>(null);
 
   async function load() {
     const res = await fetch(`/api/admin/sessions/${params.sessionId}`);
@@ -38,6 +40,20 @@ export default function SessionDetailPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.sessionId]);
+
+  async function handleRescore() {
+    setRescoring(true);
+    setRescoreError(null);
+    const res = await fetch(`/api/admin/sessions/${params.sessionId}/score`, { method: "POST" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setRescoreError(data.message ?? "評分失敗，請稍後再試");
+      setRescoring(false);
+      return;
+    }
+    await load();
+    setRescoring(false);
+  }
 
   async function toggleReview() {
     if (!detail) return;
@@ -131,14 +147,24 @@ export default function SessionDetailPage() {
           )}
 
           <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <h3 className="mb-2 text-sm font-semibold text-gray-900">AI 自動評分</h3>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">AI 自動評分</h3>
+              <button
+                onClick={handleRescore}
+                disabled={rescoring}
+                className="text-xs font-medium text-violet-600 hover:text-violet-700 disabled:opacity-50"
+              >
+                {rescoring ? "評分中..." : session.ai_score !== null ? "重新評分" : "產生評分"}
+              </button>
+            </div>
+            {rescoreError && <p className="mb-2 text-xs text-red-600">{rescoreError}</p>}
             {session.ai_score !== null ? (
               <>
                 <div className="text-2xl font-semibold text-violet-700">{session.ai_score}</div>
                 <p className="mt-1 text-sm text-gray-600">{session.ai_score_summary}</p>
               </>
             ) : (
-              <p className="text-sm text-gray-400">尚未評分（AI 自動評分將於 Phase 4 開放）</p>
+              <p className="text-sm text-gray-400">尚未評分，僅供主管參考、非最終定論。</p>
             )}
           </div>
 

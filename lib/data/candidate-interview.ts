@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isExpired } from "@/lib/tokens";
-import { chat as geminiChat } from "@/lib/gemini";
+import { chat as geminiChat, scoreFullInterview } from "@/lib/gemini";
 import { runOnce, runTestCases, type TestCaseResult } from "@/lib/judge0";
 import { sendInterviewCompletedEmail } from "@/lib/email";
 import type { AiMessage, InterviewLink, InterviewSession, Question } from "@/types/db";
@@ -305,6 +305,65 @@ export async function uploadRecording(
   if (insertError) throw insertError;
 }
 
+export async function computeAndSaveScore(sessionId: string) {
+  const supabase = createAdminClient();
+
+  const { data: session } = await supabase
+    .from("interview_sessions")
+    .select("link_id, final_answers")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (!session) throw new Error("not_found");
+
+  const { data: link } = await supabase
+    .from("interview_links")
+    .select("interview_set_id")
+    .eq("id", session.link_id)
+    .maybeSingle();
+  if (!link) throw new Error("not_found");
+
+  const { data: set } = await supabase
+    .from("interview_sets")
+    .select("question_ids")
+    .eq("id", link.interview_set_id)
+    .maybeSingle();
+  if (!set || set.question_ids.length === 0) throw new Error("no_questions");
+
+  const { data: questions } = await supabase
+    .from("questions")
+    .select("id, title, description")
+    .in("id", set.question_ids);
+
+  const { data: messages } = await supabase
+    .from("ai_messages")
+    .select("question_id, role, content")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: true });
+
+  const orderedQuestions = set.question_ids
+    .map((id: string) => (questions ?? []).find((q) => q.id === id))
+    .filter(Boolean) as { id: string; title: string; description: string }[];
+
+  const scoringInput = orderedQuestions.map((q) => ({
+    title: q.title,
+    description: q.description,
+    candidateCode: session.final_answers?.[q.id] ?? "",
+    conversationHistory: (messages ?? [])
+      .filter((m) => m.question_id === q.id)
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+  }));
+
+  const { score, summary } = await scoreFullInterview(scoringInput);
+
+  const { error } = await supabase
+    .from("interview_sessions")
+    .update({ ai_score: score, ai_score_summary: summary })
+    .eq("id", sessionId);
+  if (error) throw error;
+
+  return { score, summary };
+}
+
 export async function submitSession(token: string, sessionId: string) {
   const { link, session } = await assertWritableSession(token, sessionId);
   const supabase = createAdminClient();
@@ -321,7 +380,12 @@ export async function submitSession(token: string, sessionId: string) {
 
   await supabase.from("interview_links").update({ status: "completed" }).eq("id", link.id);
 
-  // Best-effort notification: a failure here must never block the candidate's submission.
+  // Best-effort scoring + notification: a failure here must never block the candidate's submission.
+  try {
+    await computeAndSaveScore(sessionId);
+  } catch (e) {
+    console.error("Failed to compute AI score:", e);
+  }
   try {
     await notifyAdminOfCompletion(link, sessionId, session.candidate_name ?? "候選人", submittedAt);
   } catch (e) {
