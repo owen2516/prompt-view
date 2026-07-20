@@ -149,7 +149,29 @@ export async function getSessionDetail(adminId: string, sessionId: string) {
     .eq("session_id", sessionId)
     .order("created_at", { ascending: true });
 
-  return { session, link, set, questions: orderedQuestions, recordings: recordings ?? [] };
+  const recordingsWithUrls = await Promise.all(
+    (recordings ?? []).map(async (r) => {
+      const { data: signed } = await supabase.storage
+        .from("recordings")
+        .createSignedUrl(r.storage_path, 60 * 60); // 1 hour
+      return { ...r, signed_url: signed?.signedUrl ?? null };
+    })
+  );
+
+  const { data: aiMessages } = await supabase
+    .from("ai_messages")
+    .select("*")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: true });
+
+  return {
+    session,
+    link,
+    set,
+    questions: orderedQuestions,
+    recordings: recordingsWithUrls,
+    aiMessages: aiMessages ?? [],
+  };
 }
 
 export async function setReviewStatus(

@@ -108,6 +108,9 @@ export default function InterviewEntryPage() {
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500"
             />
           </div>
+          <p className="text-xs text-gray-400">
+            本面試會全程錄製您的螢幕畫面，供主管事後檢視。點擊「開始面試」後，下一步會請您授權螢幕分享。
+          </p>
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"

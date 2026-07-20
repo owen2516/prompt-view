@@ -5,14 +5,17 @@ import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import { MonacoEditor } from "@/components/editor/MonacoEditor";
 import { ReviewStatusBadge, DifficultyBadge } from "@/components/admin/badges";
-import type { InterviewLink, InterviewSession, InterviewSet, Question, Recording } from "@/types/db";
+import type { AiMessage, InterviewLink, InterviewSession, InterviewSet, Question, Recording } from "@/types/db";
+
+type RecordingWithUrl = Recording & { signed_url: string | null };
 
 type Detail = {
   session: InterviewSession;
   link: InterviewLink;
   set: InterviewSet;
   questions: Question[];
-  recordings: Recording[];
+  recordings: RecordingWithUrl[];
+  aiMessages: AiMessage[];
 };
 
 export default function SessionDetailPage() {
@@ -51,7 +54,10 @@ export default function SessionDetailPage() {
     return <div className="p-8 text-sm text-gray-400">載入中...</div>;
   }
 
-  const { session, set, questions, recordings } = detail;
+  const { session, set, questions, recordings, aiMessages } = detail;
+  const activeQuestionMessages = activeQuestionId
+    ? aiMessages.filter((m) => m.question_id === activeQuestionId)
+    : [];
   const activeQuestion = questions.find((q) => q.id === activeQuestionId) ?? questions[0];
   const code = activeQuestion
     ? session.final_answers?.[activeQuestion.id] ?? activeQuestion.starter_code ?? ""
@@ -140,23 +146,46 @@ export default function SessionDetailPage() {
             <h3 className="mb-2 text-sm font-semibold text-gray-900">
               AI 對話紀錄 · {session.ai_interaction_count} 次互動
             </h3>
-            <p className="text-sm text-gray-400">
-              此面試尚未啟用 AI 對話（將於 Phase 2 開放候選人端 AI 助手）。
-            </p>
+            {activeQuestionMessages.length === 0 ? (
+              <p className="text-sm text-gray-400">此題目沒有 AI 對話紀錄。</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {activeQuestionMessages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`rounded-lg px-3 py-2 text-xs ${
+                      m.role === "user" ? "self-end bg-violet-50 text-violet-900" : "bg-gray-100 text-gray-800"
+                    }`}
+                  >
+                    <div className="mb-1 text-[10px] text-gray-400">
+                      {m.role === "user" ? "候選人" : "AI"} · {new Date(m.created_at).toLocaleTimeString()}
+                    </div>
+                    <div className="whitespace-pre-wrap">{m.content}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="rounded-lg border border-gray-200 bg-white p-4">
             <h3 className="mb-2 text-sm font-semibold text-gray-900">螢幕錄影</h3>
             {recordings.length > 0 ? (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3">
                 {recordings.map((r) => (
-                  <div key={r.id} className="text-xs text-gray-500">
-                    {new Date(r.created_at).toLocaleString()} · {r.duration_seconds ?? 0}s
+                  <div key={r.id}>
+                    <div className="mb-1 text-xs text-gray-500">
+                      {new Date(r.created_at).toLocaleString()} · {Math.round(r.duration_seconds ?? 0)}s
+                    </div>
+                    {r.signed_url ? (
+                      <video src={r.signed_url} controls className="w-full rounded-lg border border-gray-200" />
+                    ) : (
+                      <p className="text-xs text-red-500">無法產生播放連結</p>
+                    )}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-400">尚未啟用螢幕錄影（將於 Phase 3 開放）。</p>
+              <p className="text-sm text-gray-400">此面試場次沒有錄影紀錄。</p>
             )}
           </div>
         </div>

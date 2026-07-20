@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isExpired } from "@/lib/tokens";
 import { chat as geminiChat } from "@/lib/gemini";
 import { runOnce, runTestCases, type TestCaseResult } from "@/lib/judge0";
+import { sendInterviewCompletedEmail } from "@/lib/email";
 import type { AiMessage, InterviewLink, InterviewSession, Question } from "@/types/db";
 
 export type LinkEntryStatus =
@@ -280,20 +281,84 @@ export async function runQuestionCode(
   return { mode: "tests", results };
 }
 
+export async function uploadRecording(
+  token: string,
+  sessionId: string,
+  fileBytes: Uint8Array,
+  contentType: string,
+  durationSeconds: number | null
+) {
+  await assertWritableSession(token, sessionId);
+  const supabase = createAdminClient();
+
+  const storagePath = `${sessionId}/${Date.now()}.webm`;
+  const { error: uploadError } = await supabase.storage
+    .from("recordings")
+    .upload(storagePath, fileBytes, { contentType, upsert: false });
+  if (uploadError) throw uploadError;
+
+  const { error: insertError } = await supabase.from("recordings").insert({
+    session_id: sessionId,
+    storage_path: storagePath,
+    duration_seconds: durationSeconds,
+  });
+  if (insertError) throw insertError;
+}
+
 export async function submitSession(token: string, sessionId: string) {
   const { link, session } = await assertWritableSession(token, sessionId);
   const supabase = createAdminClient();
 
+  const submittedAt = new Date().toISOString();
   const { error } = await supabase
     .from("interview_sessions")
     .update({
       status: "completed",
-      submitted_at: new Date().toISOString(),
+      submitted_at: submittedAt,
     })
     .eq("id", sessionId);
   if (error) throw error;
 
   await supabase.from("interview_links").update({ status: "completed" }).eq("id", link.id);
 
+  // Best-effort notification: a failure here must never block the candidate's submission.
+  try {
+    await notifyAdminOfCompletion(link, sessionId, session.candidate_name ?? "候選人", submittedAt);
+  } catch (e) {
+    console.error("Failed to send completion email:", e);
+  }
+
   return session;
+}
+
+async function notifyAdminOfCompletion(
+  link: InterviewLink,
+  sessionId: string,
+  candidateName: string,
+  submittedAt: string
+) {
+  const supabase = createAdminClient();
+
+  const { data: set } = await supabase
+    .from("interview_sets")
+    .select("title, admin_id")
+    .eq("id", link.interview_set_id)
+    .maybeSingle();
+  if (!set) return;
+
+  const { data: admin } = await supabase
+    .from("admins")
+    .select("email")
+    .eq("id", set.admin_id)
+    .maybeSingle();
+  if (!admin?.email) return;
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  await sendInterviewCompletedEmail({
+    to: admin.email,
+    candidateName,
+    interviewTitle: set.title,
+    submittedAt,
+    sessionDetailUrl: `${siteUrl}/admin/sessions/${sessionId}`,
+  });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import { Panel, Group, Separator } from "react-resizable-panels";
@@ -8,6 +8,7 @@ import { MonacoEditor } from "@/components/editor/MonacoEditor";
 import { AIChatPanel } from "@/components/candidate/AIChatPanel";
 import { RunPanel } from "@/components/candidate/RunPanel";
 import { isRunnableLanguage } from "@/lib/judge0";
+import { useScreenRecorder } from "@/lib/hooks/useScreenRecorder";
 import type { InterviewSession, InterviewSet, Question } from "@/types/db";
 
 function VerticalResizeHandle() {
@@ -43,6 +44,18 @@ export function AnswerWorkspace({
   const dirtyRef = useRef(false);
 
   const activeQuestion: Question | undefined = questions[activeIndex];
+
+  const uploadSegment = useCallback(
+    async (blob: Blob, durationSeconds: number) => {
+      const formData = new FormData();
+      formData.append("sessionId", session.id);
+      formData.append("durationSeconds", String(durationSeconds));
+      formData.append("file", blob, "recording.webm");
+      await fetch(`/api/interview/${token}/upload-recording`, { method: "POST", body: formData });
+    },
+    [token, session.id]
+  );
+  const recorder = useScreenRecorder(uploadSegment);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -80,6 +93,7 @@ export function AnswerWorkspace({
     if (!confirm("確定要提交面試嗎？提交後將無法再修改作答內容。")) return;
     setSubmitting(true);
     await doSave();
+    await recorder.stopAndUpload();
     const res = await fetch(`/api/interview/${token}/submit`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -102,11 +116,53 @@ export function AnswerWorkspace({
     );
   }
 
+  if (recorder.status !== "recording") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-900 px-4">
+        <div className="w-full max-w-md rounded-xl border border-gray-800 bg-gray-950 p-8 text-center">
+          {recorder.status === "denied" ? (
+            <>
+              <h1 className="text-lg font-semibold text-white">需要螢幕分享授權才能繼續</h1>
+              <p className="mt-2 text-sm text-gray-400">
+                本面試需要全程錄影，請重新授權螢幕分享後才能作答。
+              </p>
+            </>
+          ) : recorder.status === "interrupted" ? (
+            <>
+              <h1 className="text-lg font-semibold text-white">螢幕分享已中斷</h1>
+              <p className="mt-2 text-sm text-gray-400">
+                偵測到螢幕分享已停止，請重新授權以繼續作答（先前的錄影片段已保存）。
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-lg font-semibold text-white">開始作答前，請授權螢幕錄影</h1>
+              <p className="mt-2 text-sm text-gray-400">
+                本面試會全程錄製您的螢幕畫面，供主管事後檢視。點擊下方按鈕後，請在瀏覽器彈出視窗中選擇分享畫面。
+              </p>
+            </>
+          )}
+          <button
+            onClick={() => recorder.start()}
+            disabled={recorder.status === "requesting"}
+            className="mt-6 w-full rounded-lg bg-violet-600 py-2.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-60"
+          >
+            {recorder.status === "requesting" ? "等待授權中..." : "同意並開始錄影"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen flex-col bg-gray-900">
       <div className="flex items-center justify-between border-b border-gray-800 bg-gray-950 px-4 py-2 text-sm text-gray-300">
         <div className="font-medium text-white">{set.title}</div>
         <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1.5 text-xs text-red-400">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+            錄影中
+          </span>
           <span className="text-xs text-gray-400">
             {saveState === "saving" ? "儲存中..." : saveState === "saved" ? "已自動儲存" : ""}
           </span>
