@@ -8,10 +8,47 @@ if (!apiKey) {
 const client = new GoogleGenerativeAI(apiKey);
 const MODEL_NAME = "gemini-flash-latest";
 
+// Gemini's JSON mode occasionally appends stray trailing characters (e.g. an extra
+// closing brace) after an otherwise well-formed object. Recover by parsing just the
+// first balanced top-level {...} instead of the whole string.
+function extractFirstJsonObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === "{") depth++;
+    else if (c === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 function parseJson<T>(text: string, context: string, truncated: boolean): T {
   try {
     return JSON.parse(text) as T;
   } catch {
+    const recovered = extractFirstJsonObject(text);
+    if (recovered) {
+      try {
+        return JSON.parse(recovered) as T;
+      } catch {
+        // fall through to error handling below
+      }
+    }
     if (truncated) {
       throw new Error(
         `Gemini response for ${context} was cut off before completing (hit the output token limit). Try a shorter topic/requirements or a lower difficulty, then retry.`
@@ -46,9 +83,13 @@ export async function generateQuestion(input: {
 - Programming Language: ${input.language}
 ${input.additionalRequirements ? `- Additional Requirements: ${input.additionalRequirements}` : ""}
 
+Base the question on a real, well-known LeetCode-style problem that fits the topic and difficulty (e.g. Two Sum, Sliding Window Maximum, LRU Cache, etc.), adapted as needed to fit the topic. Prefer classic, recognizable problem patterns over inventing an unusual one.
+
+Write the title and description in Traditional Chinese (繁體中文). Code (starter_code, identifiers, comments in code) should stay in ${input.language} conventions, but explanatory text must be Traditional Chinese.
+
 Return a JSON object with exactly these fields:
-- title: A clear, concise question title (string)
-- description: A detailed markdown-formatted problem description including examples and constraints (string)
+- title: A clear, concise question title (string, Traditional Chinese)
+- description: A detailed markdown-formatted problem description including examples and constraints (string, Traditional Chinese)
 - starter_code: Starter code template in ${input.language} for the candidate to fill in (string)
 - difficulty: The difficulty level (easy/medium/hard) (string)
 
