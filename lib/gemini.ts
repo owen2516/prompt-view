@@ -8,10 +8,15 @@ if (!apiKey) {
 const client = new GoogleGenerativeAI(apiKey);
 const MODEL_NAME = "gemini-flash-latest";
 
-function parseJson<T>(text: string, context: string): T {
+function parseJson<T>(text: string, context: string, truncated: boolean): T {
   try {
     return JSON.parse(text) as T;
   } catch {
+    if (truncated) {
+      throw new Error(
+        `Gemini response for ${context} was cut off before completing (hit the output token limit). Try a shorter topic/requirements or a lower difficulty, then retry.`
+      );
+    }
     throw new Error(`Failed to parse ${context} as JSON: ${text}`);
   }
 }
@@ -29,7 +34,10 @@ export async function generateQuestion(input: {
 }> {
   const model = client.getGenerativeModel({
     model: MODEL_NAME,
-    generationConfig: { responseMimeType: "application/json" },
+    generationConfig: {
+      responseMimeType: "application/json",
+      maxOutputTokens: 8192,
+    },
   });
 
   const prompt = `Generate a coding interview question for the following:
@@ -52,13 +60,14 @@ Ensure the description includes:
 
   const result = await model.generateContent(prompt);
   const text = result.response.text();
+  const truncated = result.response.candidates?.[0]?.finishReason === "MAX_TOKENS";
 
   const parsed = parseJson<{
     title?: string;
     description?: string;
     starter_code?: string;
     difficulty?: "easy" | "medium" | "hard";
-  }>(text, "generated question");
+  }>(text, "generated question", truncated);
 
   if (!parsed.title || !parsed.description || !parsed.starter_code) {
     throw new Error("Generated question missing required fields");
@@ -108,7 +117,10 @@ export async function scoreFullInterview(
 }> {
   const model = client.getGenerativeModel({
     model: MODEL_NAME,
-    generationConfig: { responseMimeType: "application/json" },
+    generationConfig: {
+      responseMimeType: "application/json",
+      maxOutputTokens: 8192,
+    },
   });
 
   const questionsText = questions
@@ -147,8 +159,9 @@ Consider across all questions:
 
   const result = await model.generateContent(prompt);
   const text = result.response.text();
+  const truncated = result.response.candidates?.[0]?.finishReason === "MAX_TOKENS";
 
-  const parsed = parseJson<{ score?: number; summary?: string }>(text, "score response");
+  const parsed = parseJson<{ score?: number; summary?: string }>(text, "score response", truncated);
 
   return {
     score: Math.min(100, Math.max(0, parsed.score ?? 0)),
