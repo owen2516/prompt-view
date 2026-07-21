@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import type { InterviewSession } from "@/types/db";
 
 interface Message {
   id: string;
@@ -94,7 +93,7 @@ export function AIChatPanel({
           timestamp: new Date(),
         },
       ]);
-    } catch (err) {
+    } catch {
       setError("網路錯誤，請重試");
       setMessages((prev) => prev.filter((m) => m.id !== userMsgId));
     } finally {

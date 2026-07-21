@@ -65,7 +65,7 @@ export function AiGenerateDialog({
         language,
       });
       onClose();
-    } catch (err) {
+    } catch {
       setError("網路錯誤，請重試");
     } finally {
       setLoading(false);
