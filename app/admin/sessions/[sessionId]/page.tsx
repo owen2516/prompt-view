@@ -64,6 +64,7 @@ export default function SessionDetailPage() {
       body: JSON.stringify({ review_status: next }),
     });
     load();
+    router.refresh();
   }
 
   if (!detail) {

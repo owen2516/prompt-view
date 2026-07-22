@@ -57,6 +57,7 @@ export default function SessionsPage() {
       body: JSON.stringify({ review_status: next }),
     });
     load();
+    router.refresh();
   }
 
   function formatDuration(row: SessionRow) {
