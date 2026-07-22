@@ -4,6 +4,14 @@ import { useCallback, useRef, useState } from "react";
 
 export type RecordingStatus = "idle" | "requesting" | "recording" | "interrupted" | "denied";
 
+// Upload in bounded chunks instead of one blob at submit time — a single multi-minute
+// recording can exceed serverless request-body limits (e.g. Vercel's ~4.5MB) and fail
+// silently since fetch() doesn't throw on 4xx/5xx. Capping bitrate + chunk length keeps
+// each upload well under that ceiling and means earlier segments survive even if a later
+// chunk fails.
+const CHUNK_MS = 20_000;
+const VIDEO_BITS_PER_SECOND = 1_000_000;
+
 /**
  * Manages one screen-recording "segment" at a time via getDisplayMedia + MediaRecorder.
  * If the candidate revokes screen-share mid-session (browser's native "Stop sharing"),
@@ -14,36 +22,39 @@ export type RecordingStatus = "idle" | "requesting" | "recording" | "interrupted
 export function useScreenRecorder(uploadFn: (blob: Blob, durationSeconds: number) => Promise<void>) {
   const [status, setStatus] = useState<RecordingStatus>("idle");
   const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const startTimeRef = useRef(0);
+  const chunkStartRef = useRef(0);
   const stopDeferredRef = useRef<(() => void) | null>(null);
+  const pendingUploadsRef = useRef<Promise<void>[]>([]);
 
   const start = useCallback(async () => {
     setStatus("requesting");
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      chunksRef.current = [];
 
       const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(
         (t) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t)
       );
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const recorder = new MediaRecorder(stream, {
+        ...(mimeType ? { mimeType } : {}),
+        videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+      });
+
+      chunkStartRef.current = Date.now();
 
       recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+        if (e.data.size === 0) return;
+        const durationSeconds = (Date.now() - chunkStartRef.current) / 1000;
+        chunkStartRef.current = Date.now();
+        const upload = uploadFn(e.data, durationSeconds).catch((err) => {
+          console.error("Failed to upload recording segment:", err);
+        });
+        pendingUploadsRef.current.push(upload);
       };
 
       recorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "video/webm" });
-        chunksRef.current = [];
-        const durationSeconds = (Date.now() - startTimeRef.current) / 1000;
         stream.getTracks().forEach((t) => t.stop());
-
-        try {
-          if (blob.size > 0) await uploadFn(blob, durationSeconds);
-        } catch (e) {
-          console.error("Failed to upload recording segment:", e);
-        }
+        await Promise.all(pendingUploadsRef.current);
+        pendingUploadsRef.current = [];
 
         stopDeferredRef.current?.();
         stopDeferredRef.current = null;
@@ -57,8 +68,7 @@ export function useScreenRecorder(uploadFn: (blob: Blob, durationSeconds: number
       });
 
       recorderRef.current = recorder;
-      startTimeRef.current = Date.now();
-      recorder.start();
+      recorder.start(CHUNK_MS);
       setStatus("recording");
     } catch {
       setStatus("denied");

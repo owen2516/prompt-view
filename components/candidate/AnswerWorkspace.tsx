@@ -51,7 +51,8 @@ export function AnswerWorkspace({
       formData.append("sessionId", session.id);
       formData.append("durationSeconds", String(durationSeconds));
       formData.append("file", blob, "recording.webm");
-      await fetch(`/api/interview/${token}/upload-recording`, { method: "POST", body: formData });
+      const res = await fetch(`/api/interview/${token}/upload-recording`, { method: "POST", body: formData });
+      if (!res.ok) throw new Error(`upload_failed_${res.status}`);
     },
     [token, session.id]
   );
