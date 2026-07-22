@@ -20,7 +20,7 @@ export default function SessionsPage() {
   const [rows, setRows] = useState<SessionRow[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [search, setSearch] = useState("");
-  const [reviewFilter, setReviewFilter] = useState<"all" | ReviewStatus>("all");
+  const [reviewFilter, setReviewFilter] = useState<"all" | ReviewStatus>("pending");
   const [interviewSets, setInterviewSets] = useState<{ id: string; title: string }[]>([]);
   const [setFilter, setSetFilter] = useState<string>("all");
 
